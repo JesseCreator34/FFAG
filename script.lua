@@ -7,14 +7,11 @@ local RunService = game:GetService("RunService")
 
 local lockedOnPlayer = nil
 local isLockedOn = false
-local highlight = nil -- The highlight object
+local highlight = nil -- The highlight object for the locked-on player
+local nonSelectedHighlights = {} -- Table to store non-selected player highlights
 local lockTransitionTime = 0.2 -- Time in seconds for smooth transition
 local transitionProgress = 0 -- Progress from 0 to 1 for transition
-local lockOnEnabled = true -- Toggle state for lock-on system
-local hitboxEnabled = true -- Toggle state for hitbox size adjustment
-
-_G.HeadSize = 10  -- Updated head size
-_G.Disabled = true
+local rightMouseDown = false -- Tracks if right mouse button is being held down
 
 -- Function to get the 2D screen position of a part
 local function getScreenPosition(part)
@@ -39,6 +36,14 @@ local function isPlayerVisible(player)
         end
     end
     return false
+end
+
+-- Function to clear all non-selected player highlights
+local function clearNonSelectedHighlights()
+    for _, highlight in pairs(nonSelectedHighlights) do
+        highlight:Destroy()
+    end
+    nonSelectedHighlights = {}
 end
 
 -- Function to find the closest player to the center of the screen
@@ -124,7 +129,7 @@ local function updateCamera(deltaTime)
 
         local targetCFrame = CFrame.new(currentCameraPosition, targetPosition)
         camera.CFrame = camera.CFrame:Lerp(targetCFrame, transitionProgress)
-    else
+    elseif rightMouseDown then
         local closestPlayer = findClosestPlayer()
         if closestPlayer then
             lockOn(closestPlayer)
@@ -134,75 +139,41 @@ local function updateCamera(deltaTime)
     end
 end
 
--- Update hitbox size based on player status
-RunService.RenderStepped:Connect(function()
-    if hitboxEnabled then
-        for _, player in ipairs(game.Players:GetPlayers()) do
-            if player.Name ~= game.Players.LocalPlayer.Name and player.Character then
-                pcall(function()
-                    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-                    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                    if humanoidRootPart and humanoid then
-                        if humanoid.Health > 0 then
-                            humanoidRootPart.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
-                            humanoidRootPart.Transparency = 0.7
-                            humanoidRootPart.BrickColor = BrickColor.new("Really blue")
-                            humanoidRootPart.Material = Enum.Material.Neon
-                            humanoidRootPart.CanCollide = false
-                        else
-                            humanoidRootPart.Size = Vector3.new(0.1, 0.1, 0.1) -- Small size to effectively "hide" the part
-                            humanoidRootPart.Transparency = 1 -- Fully transparent
-                            humanoidRootPart.CanCollide = false -- Ensure CanCollide is false
-                        end
-                    end
-                end)
-            end
-        end
-    end
-end)
-
--- Keybinding for toggling features
 UIS.InputBegan:Connect(function(input, gameProcessedEvent)
     if gameProcessedEvent then return end
-    
-    -- Toggle lock-on system with "E"
-    if input.KeyCode == Enum.KeyCode.E then 
-        lockOnEnabled = not lockOnEnabled 
-        if not lockOnEnabled then
-            if highlight then
-                highlight:Destroy()
-                highlight = nil
-            end
-            isLockedOn = false
-            lockedOnPlayer = nil
-        end
-    end
-
-    -- Toggle hitbox system with "H"
-    if input.KeyCode == Enum.KeyCode.H then
-        hitboxEnabled = not hitboxEnabled
-    end
-
-    -- Mouse right-click to lock onto the closest player
-    if input.UserInputType == Enum.UserInputType.MouseButton2 and lockOnEnabled then 
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then 
+        rightMouseDown = true
         local closestPlayer = findClosestPlayer()
         lockOn(closestPlayer)
     end
 end)
 
 UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 and lockOnEnabled then 
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then 
         if highlight then
             highlight:Destroy()
             highlight = nil
         end
         isLockedOn = false
         lockedOnPlayer = nil
+        rightMouseDown = false
+        clearNonSelectedHighlights()
     end
 end)
 
 RunService.RenderStepped:Connect(function(deltaTime)
-    if isLockedOn and lockOnEnabled then
-        updateCamera(deltaTime)
+    if rightMouseDown then
+        for _, p in ipairs(game.Players:GetPlayers()) do
+            if p ~= player and p ~= lockedOnPlayer and p.Character and p.Character:FindFirstChild("Head") and not nonSelectedHighlights[p] then
+                local highlight = Instance.new("Highlight")
+                highlight.Adornee = p.Character
+                highlight.FillColor = Color3.fromRGB(0, 0, 255)
+                highlight.FillTransparency = 0.6
+                highlight.OutlineTransparency = 1 -- No stroke
+                highlight.Parent = p.Character
+                nonSelectedHighlights[p] = highlight
+            end
+        end
     end
+    updateCamera(deltaTime)
 end)
